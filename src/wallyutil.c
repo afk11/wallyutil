@@ -33,18 +33,13 @@ void parse_xpub(struct ext_key* bip32key) {
     while(1) {
   	printf("enter xpub:");
 	len = mygetline(xpub, 113);
-	if (WALLY_OK == bip32_key_from_base58_alloc(xpub, &bip32key)) {
+	if (WALLY_OK == bip32_key_from_base58(xpub, bip32key)) {
 	    return;
 	}
 	printf("invalid xpub");
     }
 }
-static int myCmp(const void* a, const void* b) {
-    return strcmp(*(const char**)a, *(const char**)b);
-}
-void sort(const char* arr[], int n) {
-    qsort(arr, n, sizeof(const char*), myCmp);
-}
+
 int main(int argc, char** argv) {
     if (WALLY_OK != wally_init(0)) {
         return exit_error("couldn't init libwally");
@@ -79,24 +74,39 @@ int main(int argc, char** argv) {
 	if (n == 0) {
 	    return exit_error("invalid value for num keys");
 	}
-	struct ext_key* key[n];
+	struct ext_key key[n];
 	unsigned char* script_keys[n];
 	for (int i = 0; i < n; i++) {
 	    printf("please enter xpub %d\n", i);
-	    parse_xpub(key[i]);
-	    script_keys[i] = key[i]->pub_key;
-	    //printf("public key %\n", key[i]->pub_key);
-            //memcpy(script_keys[i], key[i]->pub_key, 33);
+	    parse_xpub(&key[i]);
+	    script_keys[i] = key[i].pub_key;
+            for (int z = 0; z < 33; z++) {
+		printf("%02x", key[i].pub_key[z]);
+	    }
+	    printf("\n");
         }
-	sort(script_keys, n);
-	for (int i = 0; i < n; i++) {
-	    printf("sorted pubkey %d\n", i);
-	    for (int j = 0; j < 33; j++) {
-		printf("%x", script_keys[i][j]);
+	int i = 0, j;
+//	unsigned char* tmp;
+//	for (i; i < n; i++) {
+//	    printf("sorted pubkey %d\n", i);
+//	    for (j = 0; j < n; j++) {
+//		printf("%s %d\n", script_keys[i], i);
+//	       	printf("%s %d\n", script_keys[j], j);
+//		if (strcmp(script_keys[i], script_keys[j]) < 0) {
+//		    tmp = script_keys[i];
+//		    script_keys[i] = script_keys[j];
+//		    script_keys[j] = tmp;
+//		}
+//	    }
+//	}
+	printf("multisig %d of %d\n", m, n);
+	for (i = 0; i < n; i++) {
+	    printf("pos %d\n", i);
+	    for (j = 0; j < 33; j++) {
+   	        printf("%02x", script_keys[i][j]);
 	    }
 	    printf("\n");
 	}
-	printf("multisig %d of %d\n", m, n);
     } else {
         return exit_error("usage..");
     }
