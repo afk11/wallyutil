@@ -191,9 +191,7 @@ int cmd_ecmult(int argc, char** argv)
     unsigned char priv[EC_PRIVATE_KEY_LEN];
     unsigned char pubkey[EC_PUBLIC_KEY_LEN];
     unsigned char* addr_pubkey;
-    if (WALLY_OK != wally_init(0)) {
-	return exit_error("couldn't initialize libwally");
-    }
+
     for (int i = 2; i < argc; i++) {
 	if (0 == strcmp("-u", argv[i]) || 0 == strcmp("--uncompressed", argv[i])) {
 	    addr_pubkey_len = EC_PUBLIC_KEY_UNCOMPRESSED_LEN;
