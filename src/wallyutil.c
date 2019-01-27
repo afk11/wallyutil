@@ -95,19 +95,32 @@ int cmd_multisig(int argc, char** argv)
     }
 
     struct ext_key key[n];
-    unsigned char* script_keys[n];
+    struct ext_key script_keys[n];
     for (i = 0; i < n; i++) {
         printf("please enter xpub %d\n", i);
         parse_xpub(&key[i]);
-        script_keys[i] = key[i].pub_key;
+    }
+
+    size_t path_len = 5;
+    uint32_t child_path[path_len];
+    child_path[0] = 44|1<<31;
+    child_path[1] = 0|1<<31;
+    child_path[2] = 0|1<<31;
+    child_path[3] = 0;
+    child_path[4] = 0;
+    for (i = 0; i < n; ++i) {
+	if (WALLY_OK != bip32_key_from_parent_path(&key[i], child_path,
+			path_len, BIP32_FLAG_KEY_PRIVATE, &script_keys[i])) {
+            return exit_error("failed to derive child key");
+	}
     }
 
     if (sort) {
-      	unsigned char* tmp;
 	for (i = 0; i < n; i++) {
 	    for (j = 0; j < n; j++) {
-	       if (strcmp(script_keys[i], script_keys[j]) < 0) {
-	           tmp = script_keys[i];
+	       printf("%d,%d\n", i, j);
+	       if (strcmp(script_keys[i].pub_key, script_keys[j].pub_key) < 0) {
+	           struct ext_key tmp = script_keys[i];
 	           script_keys[i] = script_keys[j];
 	           script_keys[j] = tmp;
 	       }
@@ -117,7 +130,7 @@ int cmd_multisig(int argc, char** argv)
 
     unsigned char* pubkey_bytes = malloc(n*EC_PUBLIC_KEY_LEN);
     for (i = 0; i < n; i++) {
-        memcpy(pubkey_bytes+(i*EC_PUBLIC_KEY_LEN), script_keys[i], EC_PUBLIC_KEY_LEN);
+        memcpy(pubkey_bytes+(i*EC_PUBLIC_KEY_LEN), script_keys[i].pub_key, EC_PUBLIC_KEY_LEN);
     }
     size_t script_len = 1 + n*(1 + EC_PUBLIC_KEY_LEN) + 2;
     size_t written;
@@ -131,7 +144,7 @@ int cmd_multisig(int argc, char** argv)
         return exit_error("failed to create multisig script");
     }
     free(pubkey_bytes);
-
+//    free(child_path);
     if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script, script_len,
    	    WALLY_SCRIPT_HASH160, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
         return exit_error("failed to create multisig-p2sh script");
@@ -226,6 +239,7 @@ int cmd_ecmult(int argc, char** argv)
     
     return 0;
 }
+
 int main(int argc, char** argv)
 {
     if (argc == 1) {
@@ -241,10 +255,10 @@ int main(int argc, char** argv)
 	result = cmd_validate_mnemonic(argc, argv);
     } else if (0 == strcmp(argv[1], "multisig")) {
 	result = cmd_multisig(argc, argv);
-    } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
-	result = cmd_usage(argc, argv);
     } else if (0 == strcmp(argv[1], "ecmult")) {
         result = cmd_ecmult(argc, argv);
+    } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
+	result = cmd_usage(argc, argv);
     } else {
 	result = exit_error("unknown command, try help (-h) for usage");
     }
