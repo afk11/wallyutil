@@ -108,28 +108,29 @@ int main(int argc, char** argv) {
 	    memcpy(pubkey_bytes+(i*EC_PUBLIC_KEY_LEN), script_keys[i], EC_PUBLIC_KEY_LEN);
 	}
 	size_t script_len = 1 + n*(1 + EC_PUBLIC_KEY_LEN) + 2;
-        unsigned char* script = malloc(script_len);
+	size_t written;
+        unsigned char script[script_len];
+        unsigned char script_p2sh[WALLY_SCRIPTPUBKEY_P2SH_LEN];
+        unsigned char script_p2wsh[WALLY_SCRIPTPUBKEY_P2WSH_LEN];	
+        unsigned char script_p2wsh_p2sh[WALLY_SCRIPTPUBKEY_P2SH_LEN];
+
 	if (WALLY_OK != wally_scriptpubkey_multisig_from_bytes(pubkey_bytes, n*EC_PUBLIC_KEY_LEN,
-			m, 0, script, script_len, &script_len)) {
+                    m, 0, script, script_len, &script_len)) {
 	    return exit_error("failed to create multisig script");
 	}
 
-	unsigned char* script_p2sh = malloc(WALLY_SCRIPTPUBKEY_P2SH_LEN);
-	size_t written;
 	if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script, script_len,
-				WALLY_SCRIPT_HASH160, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
+		    WALLY_SCRIPT_HASH160, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
 	    return exit_error("failed to create multisig-p2sh script");
 	}
-
-	unsigned char* script_p2wsh = malloc(WALLY_SCRIPTPUBKEY_P2WSH_LEN);
+	
 	if (WALLY_OK != wally_witness_program_from_bytes(script, script_len,
-				WALLY_SCRIPT_SHA256, script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN, &written)) {
+		    WALLY_SCRIPT_SHA256, script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN, &written)) {
 	    return exit_error("failed to create multisig-p2wsh script");
 	}
 
-	unsigned char* script_p2wsh_p2sh = malloc(WALLY_SCRIPTPUBKEY_P2SH_LEN);
 	if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN,
-				WALLY_SCRIPT_HASH160, script_p2wsh_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
+		    WALLY_SCRIPT_HASH160, script_p2wsh_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
 	    return exit_error("failed to create multisig-p2wsh-p2sh script");
 	}
 
@@ -156,11 +157,6 @@ int main(int argc, char** argv) {
 	printf("\n");
 	print_hex(script, script_len);
 	printf("\n");
-	free(pubkey_bytes);
-	free(script);
-	free(script_p2sh);
-	free(script_p2wsh);
-	free(script_p2wsh_p2sh);
     } else {
         return exit_error("usage..");
     }
