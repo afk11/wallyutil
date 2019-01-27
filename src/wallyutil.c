@@ -48,7 +48,6 @@ void parse_privkey(unsigned char* priv)
 	printf("enter priv key:\n");
 	len = mygetline(priv, 64);
         if (len != EC_PRIVATE_KEY_LEN || priv[EC_PRIVATE_KEY_LEN] != '\0') {
-	    printf("invalid prreturn; %zu %c, try again:\n", len, priv[EC_PRIVATE_KEY_LEN]);
 	    return;
 	}
 	return;
@@ -77,7 +76,7 @@ int cmd_multisig(int argc, char** argv)
     if (argc < 4) {
         return exit_error("m and n required as arguments\n");
     }
-    int m, n, i, j;
+    int m, n, i, j, sort = 0;
     char *end;
     m = strtol(argv[2], &end, 10);
     if (m == 0) {
@@ -87,7 +86,6 @@ int cmd_multisig(int argc, char** argv)
     if (n == 0) {
         return exit_error("invalid value for num keys");
     }
-    int sort = 0;
     for (i = 4; i < argc; i++) {
         if (strcmp(argv[i], "--sort") == 0) {
     	    sort = 1;
@@ -95,6 +93,7 @@ int cmd_multisig(int argc, char** argv)
    	    return exit_error("unknown flag");
         }
     }
+
     struct ext_key key[n];
     unsigned char* script_keys[n];
     for (i = 0; i < n; i++) {
@@ -102,6 +101,7 @@ int cmd_multisig(int argc, char** argv)
         parse_xpub(&key[i]);
         script_keys[i] = key[i].pub_key;
     }
+
     if (sort) {
       	unsigned char* tmp;
 	for (i = 0; i < n; i++) {
@@ -125,10 +125,12 @@ int cmd_multisig(int argc, char** argv)
     unsigned char script_p2sh[WALLY_SCRIPTPUBKEY_P2SH_LEN];
     unsigned char script_p2wsh[WALLY_SCRIPTPUBKEY_P2WSH_LEN];	
     unsigned char script_p2wsh_p2sh[WALLY_SCRIPTPUBKEY_P2SH_LEN];
+
     if (WALLY_OK != wally_scriptpubkey_multisig_from_bytes(pubkey_bytes, n*EC_PUBLIC_KEY_LEN,
             m, 0, script, script_len, &script_len)) {
         return exit_error("failed to create multisig script");
     }
+    free(pubkey_bytes);
 
     if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script, script_len,
    	    WALLY_SCRIPT_HASH160, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
@@ -206,6 +208,7 @@ int cmd_ecmult(int argc, char** argv)
 	    pubkey, EC_PUBLIC_KEY_LEN)) {
 	return exit_error("failed to compute public key");
     }
+
     addr_pubkey = malloc(addr_pubkey_len);
     if (addr_pubkey_len == EC_PUBLIC_KEY_LEN) {
 	memcpy(addr_pubkey, pubkey, EC_PUBLIC_KEY_LEN);
@@ -219,28 +222,20 @@ int cmd_ecmult(int argc, char** argv)
 	printf("%02x", addr_pubkey[i]);
     }
     printf("\n");
+    free(addr_pubkey);
+    
     return 0;
 }
 int main(int argc, char** argv)
 {
+    if (argc == 1) {
+        return cmd_usage(argc, argv);
+    }
+
     if (WALLY_OK != wally_init(0)) {
         return exit_error("couldn't init libwally");
     }
 
-    printf("argc: %d\n", argc);
-    if (argc > 1) {
-        printf("args:\n");
-        for (int i = 1; i < argc; i++) {
-            printf("[%d]: %s\n", i, argv[i]);
-     	}
-    }
-
-    if (argc == 1) {
-        printf("usage: \n");
-        return 0;
-    }
-
-    printf("cmd'%s'\n",argv[1]);
     int result;
     if (0 == strcmp(argv[1], "validate-mnemonic")) {
 	result = cmd_validate_mnemonic(argc, argv);
