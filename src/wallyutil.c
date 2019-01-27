@@ -202,7 +202,8 @@ int cmd_ecmult(int argc, char** argv)
 
     parse_privkey(priv);
 
-    if (WALLY_OK != wally_ec_public_key_from_private_key(priv, EC_PRIVATE_KEY_LEN, pubkey, EC_PUBLIC_KEY_LEN)) {
+    if (WALLY_OK != wally_ec_public_key_from_private_key(priv, EC_PRIVATE_KEY_LEN,
+	    pubkey, EC_PUBLIC_KEY_LEN)) {
 	return exit_error("failed to compute public key");
     }
     addr_pubkey = malloc(addr_pubkey_len);
@@ -210,7 +211,7 @@ int cmd_ecmult(int argc, char** argv)
 	memcpy(addr_pubkey, pubkey, EC_PUBLIC_KEY_LEN);
     } else {
 	if (WALLY_OK != wally_ec_public_key_decompress(pubkey, EC_PUBLIC_KEY_LEN,
-			addr_pubkey, EC_PUBLIC_KEY_UNCOMPRESSED_LEN)) {
+		addr_pubkey, EC_PUBLIC_KEY_UNCOMPRESSED_LEN)) {
             return exit_error("unable to compress public key");
 	}
     }
@@ -240,17 +241,19 @@ int main(int argc, char** argv)
     }
 
     printf("cmd'%s'\n",argv[1]);
+    int result;
     if (0 == strcmp(argv[1], "validate-mnemonic")) {
-	return cmd_validate_mnemonic(argc, argv);
+	result = cmd_validate_mnemonic(argc, argv);
     } else if (0 == strcmp(argv[1], "multisig")) {
-	return cmd_multisig(argc, argv);
+	result = cmd_multisig(argc, argv);
     } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
-	return cmd_usage(argc, argv);
+	result = cmd_usage(argc, argv);
     } else if (0 == strcmp(argv[1], "ecmult")) {
-        return cmd_ecmult(argc, argv);
+        result = cmd_ecmult(argc, argv);
     } else {
-	return exit_error("unknown command, try help (-h) for usage");
+	result = exit_error("unknown command, try help (-h) for usage");
     }
+
     wally_cleanup(0);
-    return 0;
+    return result;
 }
