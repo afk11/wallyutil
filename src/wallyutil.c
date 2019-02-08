@@ -87,7 +87,7 @@ int cmd_multisig(int argc, char** argv)
         return exit_error("invalid value for num keys");
     }
     for (i = 4; i < argc; i++) {
-        if (strcmp(argv[i], "--sort") == 0) {
+        if (strcmp(argv[i], "--sort") == 0 || strcmp(argv[i], "-s")) {
     	    sort = 1;
         } else {
    	    return exit_error("unknown flag");
@@ -144,7 +144,6 @@ int cmd_multisig(int argc, char** argv)
         return exit_error("failed to create multisig script");
     }
     free(pubkey_bytes);
-//    free(child_path);
     if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script, script_len,
    	    WALLY_SCRIPT_HASH160, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
         return exit_error("failed to create multisig-p2sh script");
@@ -193,26 +192,27 @@ int cmd_usage(int argc, char** argv)
     printf(" - validate-mnemonic:\n");
     printf("   accepts a bip39 mnemonic via STDIN and\n");
     printf("   returns the 0 exit code if it is valid\n");
-    printf(" - multisig <m> <n> [--sort]:\n");
+    printf(" - multisig <m> <n> [-s|--sort]:\n");
     printf("   accepts a series of bip32 keys via STDIN\n");
     printf("   and computes various script and address\n");
     printf("   formats\n");
+    printf(" - ecmult [-u|--uncompressed]:\n");
+    printf("   accepts a 32-byte private key as input and\n");
+    printf("   writes the public key to a file\n");
     return 0;
 }
 
-int cmd_ecmult(int argc, char** argv)
+int cmd_ecmult(int compressed, FILE* out)
 {
-    size_t addr_pubkey_len = EC_PUBLIC_KEY_LEN;
+    size_t addr_pubkey_len;
     unsigned char priv[EC_PRIVATE_KEY_LEN];
     unsigned char pubkey[EC_PUBLIC_KEY_LEN];
     unsigned char* addr_pubkey;
 
-    for (int i = 2; i < argc; i++) {
-	if (0 == strcmp("-u", argv[i]) || 0 == strcmp("--uncompressed", argv[i])) {
-	    addr_pubkey_len = EC_PUBLIC_KEY_UNCOMPRESSED_LEN;
-	} else {
-	    return exit_error("unknown flag, see usage");
-	}
+    if (compressed) {
+	addr_pubkey_len = EC_PUBLIC_KEY_LEN;
+    } else {
+	addr_pubkey_len = EC_PUBLIC_KEY_UNCOMPRESSED_LEN;
     }
 
     parse_privkey(priv);
@@ -231,10 +231,11 @@ int cmd_ecmult(int argc, char** argv)
             return exit_error("unable to compress public key");
 	}
     }
+
     for (int i = 0; i < addr_pubkey_len; i++) {
-	printf("%02x", addr_pubkey[i]);
+	fprintf(out, "%c", addr_pubkey[i]);
     }
-    printf("\n");
+
     free(addr_pubkey);
     
     return 0;
@@ -256,7 +257,36 @@ int main(int argc, char** argv)
     } else if (0 == strcmp(argv[1], "multisig")) {
 	result = cmd_multisig(argc, argv);
     } else if (0 == strcmp(argv[1], "ecmult")) {
-        result = cmd_ecmult(argc, argv);
+	FILE* output = stdout;
+	FILE* outfile = NULL;
+	int compressed = 1;
+	int ok = 1;
+	int arglen;
+        for (int i = 2; ok && i < argc; i++) {
+            arglen = strlen(argv[i]);
+            if (arglen > 9 && 0 == strncmp("--outfile=", argv[i], 10)) {
+		if (outfile) {
+		    result = exit_error("duplicate outfile");
+		    ok = 0;
+		} else if (outfile = fopen(argv[i]+10, "w")) {
+	            output = outfile;
+		} else {
+                    result = exit_error("failed to open outfile");
+	            ok = 0;
+                }
+	    } else if (0 == strcmp("-u", argv[i]) || 0 == strcmp("--uncompressed", argv[i])) {
+		compressed = 0;
+	    } else {
+		result = exit_error("unknown flag");
+		ok = 0;
+	    }
+	}
+        if (ok) {
+            result = cmd_ecmult(compressed, output);
+	    if (outfile) {
+		fclose(outfile);
+	    }
+        }
     } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
 	result = cmd_usage(argc, argv);
     } else {
