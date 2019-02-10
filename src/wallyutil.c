@@ -11,6 +11,7 @@
 // https://github.com/trezor/trezor-mcu/blob/fa3481e37d528794adb3b234855c23300782ad92/firmware/storage.h#L62
 #define MNEMONIC_MAX_SIZE 241
 #define BIP32_MAX_LEVELS 255
+
 int exit_error(char *msg)
 {
     printf("ERR: %s\n", msg);
@@ -27,31 +28,11 @@ int mygetline(char line[], int maxline)
     return i;
 }
 
-void print_hex(unsigned char* data, int len) 
+void print_hex(FILE* output, unsigned char* data, int len) 
 {
     for (int i = 0; i < len; i++) {
-	printf("%02x", data[i]);
+	fprintf(output, "%02x", data[i]);
     }
-}
-
-int cmd_create_mnemonic(const unsigned char* entropy, size_t entlen, FILE* output) {
-    char* mnemonic;
-    if (WALLY_OK != bip39_mnemonic_from_bytes(NULL, entropy, entlen, &mnemonic)) {
-	return exit_error("failed to produce mnemonic");
-    }
-    if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
-	return exit_error("failed to validate own mnemonic");
-    }
-    fprintf(output, "%s", mnemonic);
-    return 0;
-}
-
-int cmd_validate_mnemonic(char* mnemonic)
-{
-    if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
-        return exit_error("invalid mnemonic");
-    }
-    return 0;
 }
 
 int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num_derivs, int* public) {
@@ -113,7 +94,27 @@ int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num
     return 1;
 }
 
-int cmd_multisig(char* path_str, size_t path_str_len, int m, int n, int sort)
+int cmd_create_mnemonic(const unsigned char* entropy, size_t entlen, FILE* output) {
+    char* mnemonic;
+    if (WALLY_OK != bip39_mnemonic_from_bytes(NULL, entropy, entlen, &mnemonic)) {
+	return exit_error("failed to produce mnemonic");
+    }
+    if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
+	return exit_error("failed to validate own mnemonic");
+    }
+    fprintf(output, "%s", mnemonic);
+    return 0;
+}
+
+int cmd_validate_mnemonic(char* mnemonic)
+{
+    if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
+        return exit_error("invalid mnemonic");
+    }
+    return 0;
+}
+
+int cmd_multisig(char* path_str, size_t path_str_len, int m, int n, int sort, FILE* output)
 {
     int i, j;
     struct ext_key key[n];
@@ -187,29 +188,29 @@ int cmd_multisig(char* path_str, size_t path_str_len, int m, int n, int sort)
         return exit_error("failed to create multisig-p2wsh-p2sh script");
     }
 
-    printf("## multisig\n");
-    print_hex(script, script_len);
-    printf("\n");
+    fprintf(output, "## multisig\n");
+    print_hex(output, script, script_len);
+    fprintf(output, "\n");
 
-    printf("## p2sh(multisig)\n");
-    print_hex(script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN);
-    printf("\n");
-    print_hex(script, script_len);
-    printf("\n");
+    fprintf(output, "## p2sh(multisig)\n");
+    print_hex(output, script_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN);
+    fprintf(output, "\n");
+    print_hex(output, script, script_len);
+    fprintf(output, "\n");
 
-    printf("## p2wsh(multisig)\n");
-    print_hex(script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN);
-    printf("\n");
-    print_hex(script, script_len);
-    printf("\n");
+    fprintf(output, "## p2wsh(multisig)\n");
+    print_hex(output, script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN);
+    fprintf(output, "\n");
+    print_hex(output, script, script_len);
+    fprintf(output, "\n");
 
-    printf("## p2sh(p2wsh(multisig))\n");
-    print_hex(script_p2wsh_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN);
-    printf("\n");
-    print_hex(script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN);
-    printf("\n");
-    print_hex(script, script_len);
-    printf("\n");
+    fprintf(output, "## p2sh(p2wsh(multisig))\n");
+    print_hex(output, script_p2wsh_p2sh, WALLY_SCRIPTPUBKEY_P2SH_LEN);
+    fprintf(output, "\n");
+    print_hex(output, script_p2wsh, WALLY_SCRIPTPUBKEY_P2WSH_LEN);
+    fprintf(output, "\n");
+    print_hex(output, script, script_len);
+    fprintf(output, "\n");
     return 0;
 }
 
@@ -338,7 +339,8 @@ int main(int argc, char** argv)
         }
         int m, n, sort = 0;
 	char *path, *end;
-        m = strtol(argv[2], &end, 10);
+        FILE* output = stdout;
+	m = strtol(argv[2], &end, 10);
         if (m == 0) {
             return exit_error("invalid value for num sigs");
         }
@@ -359,7 +361,7 @@ int main(int argc, char** argv)
 	if (WALLY_OK != wally_init(0)) {
 	    return exit_error("couldn't init libwally");
 	}
-	result = cmd_multisig(path, path_str_len, m, n, sort);
+	result = cmd_multisig(path, path_str_len, m, n, sort, output);
 	wally_cleanup(0);
     } else if (0 == strcmp(argv[1], "ecmult")) {
 	FILE* output = stdout;
