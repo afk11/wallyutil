@@ -8,6 +8,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+// https://github.com/trezor/trezor-mcu/blob/fa3481e37d528794adb3b234855c23300782ad92/firmware/storage.h#L62
+#define MNEMONIC_MAX_SIZE 241
+#define BIP32_MAX_LEVELS 255
 int exit_error(char *msg)
 {
     printf("ERR: %s\n", msg);
@@ -24,36 +27,6 @@ int mygetline(char line[], int maxline)
     return i;
 }
 
-void parse_xpub(struct ext_key* bip32key) 
-{
-    char xpub[113];
-    int len;
-    
-    while(1) {
-  	printf("enter xpub:\n");
-	len = mygetline(xpub, 113);
-	if (WALLY_OK != bip32_key_from_base58(xpub, bip32key)) {
-  	    printf("invalid xpub, try again:\n");
-	    continue;
-	}
-	return;
-    }
-}
-
-void parse_privkey(unsigned char* priv)
-{
-    size_t len;
-    unsigned char tmp[64];
-    while(1) {
-	printf("enter priv key:\n");
-	len = mygetline(priv, 64);
-        if (len != EC_PRIVATE_KEY_LEN || priv[EC_PRIVATE_KEY_LEN] != '\0') {
-	    return;
-	}
-	return;
-    }
-}
-
 void print_hex(unsigned char* data, int len) 
 {
     for (int i = 0; i < len; i++) {
@@ -61,64 +34,119 @@ void print_hex(unsigned char* data, int len)
     }
 }
 
-int cmd_validate_mnemonic(int argc, char** argv)
+int cmd_create_mnemonic(const unsigned char* entropy, size_t entlen, FILE* output) {
+    char* mnemonic;
+    if (WALLY_OK != bip39_mnemonic_from_bytes(NULL, entropy, entlen, &mnemonic)) {
+	return exit_error("failed to produce mnemonic");
+    }
+    if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
+	return exit_error("failed to validate own mnemonic");
+    }
+    fprintf(output, "%s", mnemonic);
+    return 0;
+}
+
+int cmd_validate_mnemonic(char* mnemonic)
 {
-    char mnemonic[1024];
-    mygetline(mnemonic, 1024);
     if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
         return exit_error("invalid mnemonic");
     }
     return 0;
 }
 
-int cmd_multisig(int argc, char** argv)
-{
-    if (argc < 4) {
-        return exit_error("m and n required as arguments\n");
-    }
-    int m, n, i, j, sort = 0;
-    char *end;
-    m = strtol(argv[2], &end, 10);
-    if (m == 0) {
-        return exit_error("invalid value for num sigs");
-    }
-    n = strtol(argv[3], &end, 10);
-    if (n == 0) {
-        return exit_error("invalid value for num keys");
-    }
-    for (i = 4; i < argc; i++) {
-        if (strcmp(argv[i], "--sort") == 0 || strcmp(argv[i], "-s")) {
-    	    sort = 1;
-        } else {
-   	    return exit_error("unknown flag");
-        }
+int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num_derivs, int* public) {
+    char *token, *copy;
+    uint32_t tmp;
+    int i;
+
+    if (path_len < 1) {
+	return 0;
     }
 
+    copy = malloc(path_len);
+    strncpy(copy, path, path_len);
+    token = strtok_r(copy, "/", &copy);
+    if (token == 0) {
+	return 0;
+    }
+
+    if (0 == strncmp(token, "M", 1)) {
+	*public = 1;
+    } else if (0 == strncmp(token, "m", 1)) {
+	*public = 0;
+    } else {
+	return 0;
+    }
+
+    *num_derivs = 0;
+    while ((token = strtok_r(NULL, "/", &copy)) != NULL) {
+	// can't derive more than 255 levels
+	if (*num_derivs > BIP32_MAX_LEVELS) {
+            return 0;
+	}
+
+	i = 0;
+	tmp = 0;
+	while (token[i] >= '0' && token[i] <= '9') {
+	    tmp = 10 * tmp + (token[i] - '0');
+	    i++;
+	}
+
+	// must parse at least one digit
+	if (i == 0) {
+	    return 0; 
+	}
+	// allow hardened derivation indicator at the end
+	if ('h' == token[i] || '\'' == token[i] ) {
+	    tmp |= 1 << 31; 
+	    i++;
+	}
+	// reject stuff left afterwards
+	if (token[i] != '\0') {
+	    return 0;
+	}
+
+        derivs[*num_derivs] = tmp;
+	*num_derivs = *num_derivs+1;
+    }
+
+    return 1;
+}
+
+int cmd_multisig(char* path_str, size_t path_str_len, int m, int n, int sort)
+{
+    int i, j;
     struct ext_key key[n];
     struct ext_key script_keys[n];
+    char xpub[113];
     for (i = 0; i < n; i++) {
         printf("please enter xpub %d\n", i);
-        parse_xpub(&key[i]);
+	mygetline(xpub, 113);
+	if (WALLY_OK != bip32_key_from_base58(xpub, &key[i])) {
+  	    return exit_error("invalid xpub");
+	}
+	memset(xpub, 0, 113);
     }
 
-    size_t path_len = 5;
-    uint32_t child_path[path_len];
-    child_path[0] = 44|1<<31;
-    child_path[1] = 0|1<<31;
-    child_path[2] = 0|1<<31;
-    child_path[3] = 0;
-    child_path[4] = 0;
+    uint32_t child_path[BIP32_MAX_LEVELS];
+    size_t num_derivs;
+    int request_public;
+    if (!parse_path(path_str, path_str_len, child_path, &num_derivs, &request_public)) {
+        return exit_error("failed to parse path");
+    }
+
     for (i = 0; i < n; ++i) {
-	if (WALLY_OK != bip32_key_from_parent_path(&key[i], child_path,
-			path_len, BIP32_FLAG_KEY_PRIVATE, &script_keys[i])) {
+        if (num_derivs == 0) {
+            script_keys[i] = key[i];
+	} else if (WALLY_OK != bip32_key_from_parent_path(&key[i], child_path,
+                        num_derivs, BIP32_FLAG_KEY_PRIVATE, &script_keys[i])) {
             return exit_error("failed to derive child key");
-	}
+        }
     }
 
     if (sort) {
 	for (i = 0; i < n; i++) {
 	    for (j = 0; j < n; j++) {
-	       printf("%d,%d\n", i, j);
 	       if (strcmp(script_keys[i].pub_key, script_keys[j].pub_key) < 0) {
 	           struct ext_key tmp = script_keys[i];
 	           script_keys[i] = script_keys[j];
@@ -196,16 +224,15 @@ int cmd_usage(int argc, char** argv)
     printf("   accepts a series of bip32 keys via STDIN\n");
     printf("   and computes various script and address\n");
     printf("   formats\n");
-    printf(" - ecmult [-u|--uncompressed]:\n");
+    printf(" - ecmult <--outfile=/path/to/file> [-u|--uncompressed]:\n");
     printf("   accepts a 32-byte private key as input and\n");
     printf("   writes the public key to a file\n");
     return 0;
 }
 
-int cmd_ecmult(int compressed, FILE* out)
+int cmd_ecmult(unsigned char* priv, int compressed, FILE* out)
 {
     size_t addr_pubkey_len;
-    unsigned char priv[EC_PRIVATE_KEY_LEN];
     unsigned char pubkey[EC_PUBLIC_KEY_LEN];
     unsigned char* addr_pubkey;
 
@@ -214,8 +241,6 @@ int cmd_ecmult(int compressed, FILE* out)
     } else {
 	addr_pubkey_len = EC_PUBLIC_KEY_UNCOMPRESSED_LEN;
     }
-
-    parse_privkey(priv);
 
     if (WALLY_OK != wally_ec_public_key_from_private_key(priv, EC_PRIVATE_KEY_LEN,
 	    pubkey, EC_PUBLIC_KEY_LEN)) {
@@ -247,45 +272,142 @@ int main(int argc, char** argv)
         return cmd_usage(argc, argv);
     }
 
-    if (WALLY_OK != wally_init(0)) {
-        return exit_error("couldn't init libwally");
-    }
-
     int result;
     if (0 == strcmp(argv[1], "validate-mnemonic")) {
-	result = cmd_validate_mnemonic(argc, argv);
-    } else if (0 == strcmp(argv[1], "multisig")) {
-	result = cmd_multisig(argc, argv);
-    } else if (0 == strcmp(argv[1], "ecmult")) {
-	FILE* output = stdout;
+	if (WALLY_OK != wally_init(0)) {
+            return exit_error("couldn't init libwally");
+	}
+        
+        char mnemonic[MNEMONIC_MAX_SIZE]; 
+        int c, i;
+        for (i = 0; i < MNEMONIC_MAX_SIZE && (c = getchar()) != EOF; ++i) {
+            mnemonic[i] = c;
+        }
+        mnemonic[i] = '\0';
+	result = cmd_validate_mnemonic(mnemonic);
+	wally_cleanup(0);
+    } else if (0 == strcmp(argv[1], "create-mnemonic")) {
+	int c, arglen;
+	size_t entlen;
+	unsigned char entropy[BIP39_ENTROPY_LEN_320];
+	FILE* entfile = NULL;
 	FILE* outfile = NULL;
-	int compressed = 1;
-	int ok = 1;
-	int arglen;
-        for (int i = 2; ok && i < argc; i++) {
+	FILE* output = stdout;
+	for (int i = 2; i < argc; i++) {
             arglen = strlen(argv[i]);
-            if (arglen > 9 && 0 == strncmp("--outfile=", argv[i], 10)) {
+	    if (arglen > 9 && 0 == strncmp("--entfile=", argv[i], 10)) {
+                if (entfile) {
+	            return exit_error("duplicate entfile");
+		} else if (NULL == (entfile = fopen(argv[i]+10, "r"))) {
+	            return exit_error("unable to open privfile for reading");
+		}
+	    } else if (arglen > 9 && 0 == strncmp("--outfile=", argv[i], 10)) {
 		if (outfile) {
-		    result = exit_error("duplicate outfile");
-		    ok = 0;
+		    return exit_error("duplicate outfile");
 		} else if (outfile = fopen(argv[i]+10, "w")) {
 	            output = outfile;
 		} else {
-                    result = exit_error("failed to open outfile");
-	            ok = 0;
+                    return exit_error("failed to open outfile for writing");
+                }
+	    } else {
+		return exit_error("unknown flag");
+	    }
+	}
+
+        for (entlen = 0; entlen <= BIP39_ENTROPY_LEN_320 && (c = fgetc(entfile)) != EOF; ++entlen) {
+	    entropy[entlen] = c;
+	}
+	// both these must be met to have read the key correctly
+	if (!(entlen == BIP39_ENTROPY_LEN_128 || entlen == BIP39_ENTROPY_LEN_160 ||
+	      entlen == BIP39_ENTROPY_LEN_192 || entlen == BIP39_ENTROPY_LEN_224 ||
+	      entlen == BIP39_ENTROPY_LEN_256 || entlen == BIP39_ENTROPY_LEN_288 ||
+	      entlen == BIP39_ENTROPY_LEN_320) && c == EOF) {
+	    return exit_error("failed to read private key file");
+	}
+	if (WALLY_OK != wally_init(0)) {
+	    return exit_error("failed to init libwally");
+	}
+	result = cmd_create_mnemonic(entropy, entlen, output);
+	wally_cleanup(0);
+	if (outfile) {
+	    fclose(outfile);
+        }
+    } else if (0 == strcmp(argv[1], "multisig")) {	
+        if (argc < 5) {
+            return exit_error("m, n, and path required as arguments\n");
+        }
+        int m, n, sort = 0;
+	char *path, *end;
+        m = strtol(argv[2], &end, 10);
+        if (m == 0) {
+            return exit_error("invalid value for num sigs");
+        }
+        n = strtol(argv[3], &end, 10);
+        if (n == 0) {
+            return exit_error("invalid value for num keys");
+        }
+        path = argv[4];
+        for (int i = 5; i < argc; i++) {
+            if (strcmp(argv[i], "--sort") == 0 || strcmp(argv[i], "-s")) {
+    	        sort = 1;
+            } else {
+   	        return exit_error("unknown flag");
+            }
+        }
+	
+	size_t path_str_len = strlen(path);
+	if (WALLY_OK != wally_init(0)) {
+	    return exit_error("couldn't init libwally");
+	}
+	result = cmd_multisig(path, path_str_len, m, n, sort);
+	wally_cleanup(0);
+    } else if (0 == strcmp(argv[1], "ecmult")) {
+	FILE* output = stdout;
+	FILE* outfile = NULL;
+	FILE* privfile = NULL;
+	int compressed = 1;
+	int arglen, i, c;
+	for (i = 2; i < argc; i++) {
+            arglen = strlen(argv[i]);
+	    if (arglen > 10 && 0 == strncmp("--privfile=", argv[i], 11)) {
+                if (privfile) {
+	            return exit_error("duplicate privfile");
+		} else if (NULL == (privfile = fopen(argv[i]+11, "r"))) {
+	            return exit_error("unable to open privfile for reading");
+		}
+	    } else if (arglen > 9 && 0 == strncmp("--outfile=", argv[i], 10)) {
+		if (outfile) {
+		    return exit_error("duplicate outfile");
+		} else if (outfile = fopen(argv[i]+10, "w")) {
+	            output = outfile;
+		} else {
+                    return exit_error("failed to open outfile for writing");
                 }
 	    } else if (0 == strcmp("-u", argv[i]) || 0 == strcmp("--uncompressed", argv[i])) {
 		compressed = 0;
 	    } else {
-		result = exit_error("unknown flag");
-		ok = 0;
+		return exit_error("unknown flag");
 	    }
 	}
-        if (ok) {
-            result = cmd_ecmult(compressed, output);
-	    if (outfile) {
-		fclose(outfile);
-	    }
+
+	if (!privfile) {
+	    return exit_error("privfile must be provided");
+	}
+	unsigned char priv[EC_PRIVATE_KEY_LEN];
+        for (i = 0; i <= EC_PRIVATE_KEY_LEN && (c = fgetc(privfile)) != EOF; ++i) {
+	    priv[i] = c;
+	}
+	// both these must be met to have read the key correctly
+	if (!(i == EC_PRIVATE_KEY_LEN && c == EOF)) {
+	    return exit_error("failed to read private key file");
+	}        
+	if (WALLY_OK != wally_init(0)) {
+	    return exit_error("failed to init libwally");
+	}
+	result = cmd_ecmult(priv, compressed, output);
+	wally_cleanup(0);
+	if (outfile) {
+	    fclose(outfile);
         }
     } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
 	result = cmd_usage(argc, argv);
