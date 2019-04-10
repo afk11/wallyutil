@@ -9,8 +9,9 @@ int bip39_word_count_from_entropy_size(int ent) {
 }
 
 int bip39_entropy_size_from_word_count(int wc) {
-    if (wc == 12 || wc == 15 || wc == 18 ||
-        wc == 21 || wc == 24) {
+    if (wc == BIP39_MNEMONIC_SIZE_128 || wc == BIP39_MNEMONIC_SIZE_160 ||
+        wc == BIP39_MNEMONIC_SIZE_192 || wc == BIP39_MNEMONIC_SIZE_224 ||
+        wc == BIP39_MNEMONIC_SIZE_256) {
         return (32*(wc*11))/33;
     }
     return 0;
