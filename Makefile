@@ -1,4 +1,4 @@
-LIBFILES="src/bip32.c"
+LIBFILES=src/bip32.c src/bip39.c
 
 wallyutil:
 		gcc -Iinclude -o wallyutil src/wallyutil.c $(LIBFILES) -lwallycore
