@@ -1,5 +1,5 @@
-lang: c
-
+language: c
+sudo: required
 dist: xenial
 
 script:
