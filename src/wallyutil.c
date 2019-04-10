@@ -18,10 +18,10 @@ int exit_error(char *msg)
     return 1;
 }
 
-int mygetline(char line[], int maxline)
+int mygetline(FILE* input, char line[], int maxline)
 {
     int c, i;
-    for (i = 0; i < maxline-1 && (c = getchar()) != EOF && c != '\n'; ++i) {
+    for (i = 0; i < maxline-1 && (c = fgetc(input)) != EOF && c != '\n'; ++i) {
         line[i] = c;
     }
     line[i] = '\0';
@@ -79,7 +79,7 @@ int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num
 	}
 	// allow hardened derivation indicator at the end
 	if ('h' == token[i] || '\'' == token[i] ) {
-	    tmp |= 1 << 31; 
+	    tmp |= 1 << 31;
 	    i++;
 	}
 	// reject stuff left afterwards
@@ -96,7 +96,7 @@ int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num
 
 int cmd_create_mnemonic(const unsigned char* entropy, size_t entlen, FILE* output) {
     char* mnemonic;
-    if (WALLY_OK != bip39_mnemonic_from_bytes(NULL, entropy, entlen, &mnemonic)) {
+   if (WALLY_OK != bip39_mnemonic_from_bytes(NULL, entropy, entlen, &mnemonic)) {
 	return exit_error("failed to produce mnemonic");
     }
     if (WALLY_OK != bip39_mnemonic_validate(NULL, mnemonic)) {
@@ -114,20 +114,11 @@ int cmd_validate_mnemonic(char* mnemonic)
     return 0;
 }
 
-int cmd_multisig(char* path_str, size_t path_str_len, int m, int n, int sort, FILE* output)
+int cmd_multisig(struct ext_key key[],  char* path_str, size_t path_str_len, int m, int n, int sort, FILE* output)
 {
     int i, j;
-    struct ext_key key[n];
+    //struct ext_key key[n];
     struct ext_key script_keys[n];
-    char xpub[113];
-    for (i = 0; i < n; i++) {
-        printf("please enter xpub %d\n", i);
-	mygetline(xpub, 113);
-	if (WALLY_OK != bip32_key_from_base58(xpub, &key[i])) {
-  	    return exit_error("invalid xpub");
-	}
-	memset(xpub, 0, 113);
-    }
 
     uint32_t child_path[BIP32_MAX_LEVELS];
     size_t num_derivs;
@@ -228,6 +219,17 @@ int cmd_usage(int argc, char** argv)
     printf(" - ecmult <--outfile=/path/to/file> [-u|--uncompressed]:\n");
     printf("   accepts a 32-byte private key as input and\n");
     printf("   writes the public key to a file\n");
+    return 0;
+}
+
+int cmd_validate_privkey(unsigned char* priv, size_t priv_len, FILE* out)
+{
+    int result = wally_ec_private_key_verify(priv, priv_len);
+    if (result) {
+	fprintf(out, "valid");
+    } else {
+	fprintf(out, "invalid");
+    }
     return 0;
 }
 
@@ -339,18 +341,32 @@ int main(int argc, char** argv)
         }
         int m, n, sort = 0;
 	char *path, *end;
+	FILE* input = stdin;
         FILE* output = stdout;
+	FILE* xpubfile = NULL;
+	FILE* outfile = NULL;
 	m = strtol(argv[2], &end, 10);
-        if (m == 0) {
+        if (m == 0 || m > 16) {
             return exit_error("invalid value for num sigs");
         }
         n = strtol(argv[3], &end, 10);
-        if (n == 0) {
+        if (n == 0 || n > 16) {
             return exit_error("invalid value for num keys");
         }
+	if (m > n) {
+	    return exit_error("num signers cannot be greater than num keys");
+	}
         path = argv[4];
         for (int i = 5; i < argc; i++) {
-            if (strcmp(argv[i], "--sort") == 0 || strcmp(argv[i], "-s")) {
+	    if (arglen > 10 && 0 == strncmp("--xpubfile=", argv[i], 11)) {
+                if (xpubfile) {
+	            return exit_error("duplicate xpubfile");
+		} else if (xpubfile = fopen(argv[i]+11, "r")) {
+                    input = xpubfile;
+		} else {	
+	            return exit_error("unable to open xpubfile for reading");
+		}
+            } else if (strcmp(argv[i], "--sort") == 0 || strcmp(argv[i], "-s")) {
     	        sort = 1;
             } else {
    	        return exit_error("unknown flag");
@@ -361,9 +377,29 @@ int main(int argc, char** argv)
 	if (WALLY_OK != wally_init(0)) {
 	    return exit_error("couldn't init libwally");
 	}
-	result = cmd_multisig(path, path_str_len, m, n, sort, output);
+
+        char xpub[113];
+	struct ext_key keys[n];
+        for (int i = 0; i < n; i++) {
+	    if (xpubfile == NULL) {    
+                printf("please enter xpub %d\n", i);
+	    }
+	    mygetline(input, xpub, 113);
+	    if (WALLY_OK != bip32_key_from_base58(xpub, &keys[i])) {
+  	        return exit_error("invalid xpub");
+	    }
+	    memset(xpub, 0, 113);
+        }
+	result = cmd_multisig(keys, path, path_str_len, m, n, sort, output);
 	wally_cleanup(0);
+	if (outfile) {
+	    fclose(outfile);
+	}
+	if (xpubfile) {
+	    fclose(outfile);
+	}
     } else if (0 == strcmp(argv[1], "ecmult")) {
+	FILE* input = stdin;
 	FILE* output = stdout;
 	FILE* outfile = NULL;
 	FILE* privfile = NULL;
@@ -374,7 +410,9 @@ int main(int argc, char** argv)
 	    if (arglen > 10 && 0 == strncmp("--privfile=", argv[i], 11)) {
                 if (privfile) {
 	            return exit_error("duplicate privfile");
-		} else if (NULL == (privfile = fopen(argv[i]+11, "r"))) {
+		} else if (privfile = fopen(argv[i]+11, "r")) {
+		    input = privfile;
+		} else {
 	            return exit_error("unable to open privfile for reading");
 		}
 	    } else if (arglen > 9 && 0 == strncmp("--outfile=", argv[i], 10)) {
@@ -392,9 +430,6 @@ int main(int argc, char** argv)
 	    }
 	}
 
-	if (!privfile) {
-	    return exit_error("privfile must be provided");
-	}
 	unsigned char priv[EC_PRIVATE_KEY_LEN];
         for (i = 0; i <= EC_PRIVATE_KEY_LEN && (c = fgetc(privfile)) != EOF; ++i) {
 	    priv[i] = c;
@@ -411,6 +446,9 @@ int main(int argc, char** argv)
 	if (outfile) {
 	    fclose(outfile);
         }
+	if (privfile) {
+	    fclose(privfile);
+	}
     } else if (0 == strcmp(argv[1], "-h") || 0 == strcmp(argv[1], "help")) {
 	result = cmd_usage(argc, argv);
     } else {

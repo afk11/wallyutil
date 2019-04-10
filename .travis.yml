@@ -1,0 +1,13 @@
+lang: c
+
+install:
+ - cd .. && \
+   git clone https://github.com/ElementsProject/libwally-core && \
+   cd libwally-core && \
+   ./tools/autogen.sh && \
+   ./configure && \
+   make -j$(grep -P '^core id\t' /proc/cpuinfo | wc -l) && \
+   sudo make install
+
+script:
+ - gcc -o wallyutil src/wallyutil.c -lwallycore
