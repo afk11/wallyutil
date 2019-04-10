@@ -1,5 +1,6 @@
 lang: c
 
+dist: xenial
 
 before_script:
  - sudo apt install git
