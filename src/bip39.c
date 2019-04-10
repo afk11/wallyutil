@@ -5,7 +5,7 @@ int bip39_word_count_from_entropy_size(int ent) {
         ent == 224 || ent == 256) {
         return (ent+ent/32)/11;
     }
-    return -1;
+    return 0;
 }
 
 int bip39_entropy_size_from_word_count(int wc) {
@@ -13,6 +13,6 @@ int bip39_entropy_size_from_word_count(int wc) {
         wc == 21 || wc == 24) {
         return (32*(wc*11))/33;
     }
-    return -1;
+    return 0;
 }
 

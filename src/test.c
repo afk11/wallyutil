@@ -120,54 +120,55 @@ int test_bip32() {
 }
 
 int test_bip39(void) {
-    if (12 != bip39_word_count_from_entropy_size(128)) {
+    if (BIP39_MNEMONIC_SIZE_128 != bip39_word_count_from_entropy_size(128)) {
         printf("wordcount from entropy_size: 128 != 12\n");
         return 0;
     }
-    if (128 != bip39_entropy_size_from_word_count(12)) {
+    if (128 != bip39_entropy_size_from_word_count(BIP39_MNEMONIC_SIZE_128)) {
         printf("bip_entropy_size_from_word_count: expected 128\n");
         return 0;
     }
-    if (15 != bip39_word_count_from_entropy_size(160)) {
+    if (BIP39_MNEMONIC_SIZE_160 != bip39_word_count_from_entropy_size(160)) {
         printf("wordcount from entropy_size: 160 != 15\n");
         return 0;
     }
-    if (160 != bip39_entropy_size_from_word_count(15)) {
+    if (160 != bip39_entropy_size_from_word_count(BIP39_MNEMONIC_SIZE_160)) {
         printf("bip_entropy_size_from_word_count: expected 160\n");
         return 0;
     }
-    if (18 != bip39_word_count_from_entropy_size(192)) {
+    if (BIP39_MNEMONIC_SIZE_192 != bip39_word_count_from_entropy_size(192)) {
         printf("wordcount from entropy_size: 192 != 18\n");
         return 0;
     }
-    if (192 != bip39_entropy_size_from_word_count(18)) {
+    if (192 != bip39_entropy_size_from_word_count(BIP39_MNEMONIC_SIZE_192)) {
         printf("bip_entropy_size_from_word_count: expected 192\n");
         return 0;
     }
-    if (21 != bip39_word_count_from_entropy_size(224)) {
+    if (BIP39_MNEMONIC_SIZE_224 != bip39_word_count_from_entropy_size(224)) {
         printf("wordcount from entropy_size: 224 != 21\n");
         return 0;
     }
-    if (224 != bip39_entropy_size_from_word_count(21)) {
+    if (224 != bip39_entropy_size_from_word_count(BIP39_MNEMONIC_SIZE_224)) {
         printf("bip_entropy_size_from_word_count: expected 224\n");
         return 0;
     }
-    if (24 != bip39_word_count_from_entropy_size(256)) {
+    if (BIP39_MNEMONIC_SIZE_256 != bip39_word_count_from_entropy_size(256)) {
         printf("wordcount from entropy_size: 256 != 24\n");
         return 0;
     }
-    if (256 != bip39_entropy_size_from_word_count(24)) {
+    if (256 != bip39_entropy_size_from_word_count(BIP39_MNEMONIC_SIZE_256)) {
         printf("bip_entropy_size_from_word_count: expected 256\n");
-        return 0;
+        return 1;
     }
-    if (-1 != bip39_entropy_size_from_word_count(11)) {
+    if (0 != bip39_entropy_size_from_word_count(11)) {
         printf("bip39_entropy_size_from_word_count: accepted invalid word count 11");
         return 0;
     }
-    if (-1 != bip39_word_count_from_entropy_size(1024)) {
+    if (0 != bip39_word_count_from_entropy_size(1024)) {
         printf("bip39_word_count_from_entropy_size: accepted invalid length: 1024\n");
         return 0;
     }
+    return 1;
 }
 
 int main(void) {

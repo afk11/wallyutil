@@ -1,3 +1,10 @@
+
+#define BIP39_MNEMONIC_SIZE_128 12
+#define BIP39_MNEMONIC_SIZE_160 15
+#define BIP39_MNEMONIC_SIZE_192 18
+#define BIP39_MNEMONIC_SIZE_224 21
+#define BIP39_MNEMONIC_SIZE_256 24
+
 // takes `ent` (entropy size) and returns the
 // number of words in the mnemonic, or -1 if
 // ent is not a valid size for bip39
