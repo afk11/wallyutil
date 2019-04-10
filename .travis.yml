@@ -10,5 +10,7 @@ script:
      ./tools/autogen.sh &&
      ./configure &&
      make -j$(grep -P '^core id\t' /proc/cpuinfo | wc -l) &&
-     sudo make install
- - gcc -o wallyutil src/wallyutil.c -lwallycore
+     sudo make install &&
+     cd ../wallyutil
+ - make wallyutil test
+ - ./test
