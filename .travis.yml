@@ -1,6 +1,6 @@
 lang: c
 
-install:
+before_script:
  - cd .. && \
    git clone https://github.com/ElementsProject/libwally-core && \
    cd libwally-core && \
