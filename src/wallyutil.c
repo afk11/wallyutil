@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "wallyutil_bip32.h"
 
 // https://github.com/trezor/trezor-mcu/blob/fa3481e37d528794adb3b234855c23300782ad92/firmware/storage.h#L62
 #define MNEMONIC_MAX_SIZE 241
@@ -33,65 +34,6 @@ void print_hex(FILE* output, unsigned char* data, int len)
     for (int i = 0; i < len; i++) {
 	fprintf(output, "%02x", data[i]);
     }
-}
-
-int parse_path(const char* path, size_t path_len, uint32_t derivs[], size_t* num_derivs, int* public) {
-    char *token, *copy;
-    uint32_t tmp;
-    int i;
-
-    if (path_len < 1) {
-	return 0;
-    }
-
-    copy = malloc(path_len);
-    strncpy(copy, path, path_len);
-    token = strtok_r(copy, "/", &copy);
-    if (token == 0) {
-	return 0;
-    }
-
-    if (0 == strncmp(token, "M", 1)) {
-	*public = 1;
-    } else if (0 == strncmp(token, "m", 1)) {
-	*public = 0;
-    } else {
-	return 0;
-    }
-
-    *num_derivs = 0;
-    while ((token = strtok_r(NULL, "/", &copy)) != NULL) {
-	// can't derive more than 255 levels
-	if (*num_derivs > BIP32_MAX_LEVELS) {
-            return 0;
-	}
-
-	i = 0;
-	tmp = 0;
-	while (token[i] >= '0' && token[i] <= '9') {
-	    tmp = 10 * tmp + (token[i] - '0');
-	    i++;
-	}
-
-	// must parse at least one digit
-	if (i == 0) {
-	    return 0; 
-	}
-	// allow hardened derivation indicator at the end
-	if ('h' == token[i] || '\'' == token[i] ) {
-	    tmp |= 1 << 31;
-	    i++;
-	}
-	// reject stuff left afterwards
-	if (token[i] != '\0') {
-	    return 0;
-	}
-
-        derivs[*num_derivs] = tmp;
-	*num_derivs = *num_derivs+1;
-    }
-
-    return 1;
 }
 
 int cmd_create_mnemonic(const unsigned char* entropy, size_t entlen, FILE* output) {
@@ -123,7 +65,7 @@ int cmd_multisig(struct ext_key key[],  char* path_str, size_t path_str_len, int
     uint32_t child_path[BIP32_MAX_LEVELS];
     size_t num_derivs;
     int request_public;
-    if (!parse_path(path_str, path_str_len, child_path, &num_derivs, &request_public)) {
+    if (!bip32_parse_absolute_path(path_str, path_str_len, child_path, &num_derivs, &request_public)) {
         return exit_error("failed to parse path");
     }
 
@@ -358,6 +300,7 @@ int main(int argc, char** argv)
 	}
         path = argv[4];
         for (int i = 5; i < argc; i++) {
+            int arglen = strlen(argv[i]);
 	    if (arglen > 10 && 0 == strncmp("--xpubfile=", argv[i], 11)) {
                 if (xpubfile) {
 	            return exit_error("duplicate xpubfile");
