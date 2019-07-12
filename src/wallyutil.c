@@ -15,7 +15,7 @@
 
 int exit_error(char *msg)
 {
-    printf("ERR: %s\n", msg);
+    fprintf(stderr, "ERR: %s\n", msg);
     return 1;
 }
 
@@ -151,16 +151,20 @@ int cmd_usage(int argc, char** argv)
 {
     printf("---- walletutil ----\n");
     printf("commands: \n");
+    printf(" - create-mnemonic\n");
+    printf("   accepts raw entropy and produces a bip32 mnemonic");
     printf(" - validate-mnemonic:\n");
     printf("   accepts a bip39 mnemonic via STDIN and\n");
     printf("   returns the 0 exit code if it is valid\n");
-    printf(" - multisig <m> <n> [-s|--sort]:\n");
-    printf("   accepts a series of bip32 keys via STDIN\n");
+    printf(" - multisig <m> <n> <bip32 path> [-s|--sort]:\n");
+    printf("   reads <m> of bip32 keys via STDIN\n");
     printf("   and computes various script and address\n");
     printf("   formats\n");
-    printf(" - ecmult <--outfile=/path/to/file> [-u|--uncompressed]:\n");
+    printf(" - ecmult <outfile=/path/to/file> [-u|--uncompressed]:\n");
     printf("   accepts a 32-byte private key as input and\n");
     printf("   writes the public key to a file\n");
+    printf(" - top2sh: reads a script via STDIN and writes the\n");
+    printf("   P2SH of this script to STDOUT\n");
     return 0;
 }
 
@@ -171,6 +175,20 @@ int cmd_validate_privkey(unsigned char* priv, size_t priv_len, FILE* out)
 	fprintf(out, "valid");
     } else {
 	fprintf(out, "invalid");
+    }
+    return 0;
+}
+
+int cmd_to_p2sh(unsigned char* script, size_t script_len, FILE* out)
+{
+    unsigned char scriptpubkey[WALLY_SCRIPTPUBKEY_P2SH_LEN];
+    size_t written;
+    if (WALLY_OK != wally_scriptpubkey_p2sh_from_bytes(script, script_len,
+   	    WALLY_SCRIPT_HASH160, script, WALLY_SCRIPTPUBKEY_P2SH_LEN, &written)) {
+        return exit_error("failed to create p2sh script");
+    }
+    for (int i = 0; i < script_len; i++) {
+	fprintf(out, "%c", script[i]);
     }
     return 0;
 }
@@ -218,26 +236,63 @@ int main(int argc, char** argv)
     }
 
     int result;
-    if (0 == strcmp(argv[1], "validate-mnemonic")) {
+    if (0 == strcmp(argv[1], "to-p2sh")) {
+        
+    } else if (0 == strcmp(argv[1], "bip39-create-seed")) {
+        if (WALLY_OK != wally_init(0)) {
+            return exit_error("couldn't init libwally");
+        }
+        int with_passphrase = 0;
+        char* mnemonic = NULL;
+        for (size_t i = 2; i < argc; i++) {
+            int arglen = strlen(argv[i]);
+            if (arglen == 12 && 0 == strcmp("--passphrase", argv[i]) ||
+                arglen == 2 && 0 == strcmp("-p", argv[i])) {
+                passphrase = 1;
+            } else {
+                return exit_error("bip39-create-seed: unexpected parameter");
+            }
+        }
+        
+        wally_cleanup(0);
+    } else if (0 == strcmp(argv[1], "validate-mnemonic")) {
 	if (WALLY_OK != wally_init(0)) {
             return exit_error("couldn't init libwally");
 	}
         
-        char mnemonic[MNEMONIC_MAX_SIZE]; 
+        FILE* input = stdin;
+        FILE* infile = NULL;
+        for (size_t i = 2; i < argc; i++) {
+            int arglen = strlen(argv[i]);
+            if (arglen > 8 && 0 == strncmp("--infile=", argv[i], 9)) {
+                if (infile) {
+                    return exit_error("duplicate infile");
+                } else if (NULL == (infile = fopen(argv[i]+9, "r"))) {
+                    return exit_error("unable to open infile for reading");
+                }
+            } else {
+                return exit_error("validate-mnemonic: unexpected parameter");
+            }
+        }
+        char mnemonic[MNEMONIC_MAX_SIZE];
         int c, i;
-        for (i = 0; i < MNEMONIC_MAX_SIZE && (c = getchar()) != EOF; ++i) {
+        for (i = 0; i < MNEMONIC_MAX_SIZE && (c = fgetc(input)) != EOF; ++i) {
             mnemonic[i] = c;
         }
         mnemonic[i] = '\0';
 	result = cmd_validate_mnemonic(mnemonic);
 	wally_cleanup(0);
+        if (infile) {
+            fclose(infile);
+        }
     } else if (0 == strcmp(argv[1], "create-mnemonic")) {
 	int c, arglen;
 	size_t entlen;
 	unsigned char entropy[BIP39_ENTROPY_LEN_320];
-	FILE* entfile = NULL;
+	FILE* entfile = stdin;
 	FILE* outfile = NULL;
 	FILE* output = stdout;
+        FILE* input = stdin;
 	for (int i = 2; i < argc; i++) {
             arglen = strlen(argv[i]);
 	    if (arglen > 9 && 0 == strncmp("--entfile=", argv[i], 10)) {
@@ -262,6 +317,7 @@ int main(int argc, char** argv)
         for (entlen = 0; entlen <= BIP39_ENTROPY_LEN_320 && (c = fgetc(entfile)) != EOF; ++entlen) {
 	    entropy[entlen] = c;
 	}
+
 	// both these must be met to have read the key correctly
 	if (!(entlen == BIP39_ENTROPY_LEN_128 || entlen == BIP39_ENTROPY_LEN_160 ||
 	      entlen == BIP39_ENTROPY_LEN_192 || entlen == BIP39_ENTROPY_LEN_224 ||
@@ -325,7 +381,7 @@ int main(int argc, char** argv)
 	struct ext_key keys[n];
         for (int i = 0; i < n; i++) {
 	    if (xpubfile == NULL) {    
-                printf("please enter xpub %d\n", i);
+                fprintf(stderr, "please enter xpub %d\n", i);
 	    }
 	    mygetline(input, xpub, 113);
 	    if (WALLY_OK != bip32_key_from_base58(xpub, &keys[i])) {
